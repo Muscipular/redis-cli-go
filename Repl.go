@@ -4,7 +4,9 @@ import (
 	//"fmt"
 	"github.com/c-bata/go-prompt"
 	"os"
+	"os/signal"
 	"reflect"
+	"syscall"
 	"unsafe"
 	//. "strings"
 	//"time"
@@ -12,18 +14,45 @@ import (
 )
 
 type REPL struct {
-	redis   *RedisExecutor
-	canExit bool
-	prompt  string
-	history *prompt.History
+	redis          *RedisExecutor
+	canExit        bool
+	prompt         string
+	history        *prompt.History
+	promptInstance *prompt.Prompt
+	in             prompt.ConsoleParser
 }
 
 func NewREPL(redis *RedisExecutor) *REPL {
-	return &REPL{
+	i := &REPL{
 		canExit: false,
 		redis:   redis,
 		prompt:  "> ",
 	}
+	i.promptInstance = prompt.New(func(s string) { i.execute(s) }, func(document prompt.Document) []prompt.Suggest { return i.suggest(document) },
+		prompt.OptionLivePrefix(i.getPromptText),
+		prompt.OptionTitle("redis cli"),
+		prompt.OptionAddKeyBind(
+			bindKey(prompt.ControlC, i.handleControlC),
+			bindKey(prompt.Escape, i.handleEsc),
+		),
+		func(p *prompt.Prompt) error {
+			pointer := reflect.ValueOf(*p).Field(4).Pointer()
+			i.history = (*prompt.History)(unsafe.Pointer(pointer))
+			i.history.Clear()
+			return nil
+		},
+		func(p *prompt.Prompt) error {
+			//field := reflect.ValueOf(*p).Field(0)
+			//WriteLn(field)
+			//pointer := field.InterfaceData()
+			//WriteLn(pointer)
+			//WriteLn(field.UnsafeAddr())
+			//ptr1 := pointer[0]
+			//i.in = *(*prompt.ConsoleParser)(unsafe.Pointer(ptr1))
+			return nil
+		},
+	)
+	return i
 }
 
 func (repl *REPL) execute(input string) {
@@ -33,13 +62,32 @@ func (repl *REPL) execute(input string) {
 	}
 	ss := parseArg(input)
 	opt, ss := GetCmdOpt(ss)
-	//Debug("Repl", "cmd: ", ss, opt)
+	Debug("Repl", "cmd: ", ss, opt)
 	cmd := &RedisCommand{
 		Args:   ss,
 		Option: opt,
 	}
 	executor := repl.redis
-	ch := executor.AsyncExecute(cmd)
+	sch := make(chan os.Signal, 1)
+	signal.Notify(sch,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT,)
+	ch := executor.AsyncExecute(cmd, func() bool {
+		select {
+		case <-sch:
+			signal.Stop(sch)
+			WriteLn("\033[2K\033[0GCancel")
+			return true
+		default:
+		}
+		//if e == nil {
+		//	if prompt.GetKey(bytes) == prompt.ControlC {
+		//		return true
+		//	}
+		//}
+		return false
+	})
 	for true {
 		resp := <-ch
 		if resp == nil {
@@ -88,19 +136,6 @@ func (repl *REPL) run() error {
 		//WriteLn(e, c)
 		return e
 	}
-	prompt.New(func(s string) { repl.execute(s) }, func(document prompt.Document) []prompt.Suggest { return repl.suggest(document) },
-		prompt.OptionLivePrefix(repl.getPromptText),
-		prompt.OptionTitle("redis cli"),
-		prompt.OptionAddKeyBind(
-			bindKey(prompt.ControlC, repl.handleControlC),
-			bindKey(prompt.Escape, repl.handleEsc),
-		),
-		func(p *prompt.Prompt) error {
-			pointer := reflect.ValueOf(*p).Field(4).Pointer()
-			repl.history = (*prompt.History)(unsafe.Pointer(pointer))
-			repl.history.Clear()
-			return nil
-		},
-	).Run()
+	repl.promptInstance.Run()
 	return nil
 }

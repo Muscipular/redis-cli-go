@@ -20,7 +20,7 @@ import (
 	"strings"
 )
 
-type PrintOutput func(string)
+//type PrintOutput func(string)
 type AnyType interface{}
 
 func If(condition bool, true AnyType, false AnyType) AnyType {
@@ -284,6 +284,10 @@ func formatNormal(value reflect.Value, prefix string, ix int, count int, ft Enum
 		_len := value.Len()
 		//Debug("Array", ix, count, _len, " [", prefix, "]")
 		px := makePrefix(prefix, ix, count)
+		if _len == 0 {
+			WriteLn(px, "(empty)")
+			break
+		}
 		for i := 0; i < _len; i++ {
 			v2 := value.Index(i)
 			formatNormal(v2, px, i, _len, ft)
@@ -325,30 +329,28 @@ func (a Keys) Swap(i, j int) {
 
 func valueToString(formatType EnumFormatType, value reflect.Value) string {
 	//Debug("vts", formatType, value)
-	if formatType == FormatRawString {
-		return value.Interface().(string)
-	}
-	if formatType == FormatNormal {
-		s, _ := json.Marshal(value.Interface())
-		return string(s)
-	}
-	if formatType == FormatJson {
-		var data interface{}
-		sss := value.Interface().(string)
-		e := json.Unmarshal([]byte(sss), &data)
-		if e != nil {
-			//Debug("json", sss, " - ", e)
-			bytes, _ := json.Marshal(sss)
-			return string(bytes)
+	if value.Kind() == reflect.String {
+		if formatType == FormatRawString {
+			return value.Interface().(string)
 		}
+		if formatType == FormatJson {
+			var data interface{}
+			sss := value.Interface().(string)
+			e := json.Unmarshal([]byte(sss), &data)
+			if e != nil {
+				//Debug("json", sss, " - ", e)
+				bytes, _ := json.Marshal(sss)
+				return string(bytes)
+			}
 
-		s, _ := json.MarshalIndent(&data, "", "  ")
-		//Debug("json", data, reflect.TypeOf(data).String(), " - ", string(s))
-		return string(s)
+			s, _ := json.MarshalIndent(&data, "", "  ")
+			//Debug("json", data, reflect.TypeOf(data).String(), " - ", string(s))
+			return string(s)
+		}
 	}
-	return fmt.Sprint(value)
-}
-
-func (result *RedisExecuteResult) FormatJson(nc bool) {
-
+	//if formatType == FormatNormal {
+	s, _ := json.MarshalIndent(value.Interface(), "", "  ")
+	return string(s)
+	//}
+	//return fmt.Sprint(value)
 }

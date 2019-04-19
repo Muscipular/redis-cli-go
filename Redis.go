@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/go-redis/redis"
 	"reflect"
-	"strings"
+	. "strings"
 	"time"
 )
 
@@ -88,8 +88,10 @@ type RedisExecuteResult struct {
 
 func (executor *RedisExecutor) Execute(command *RedisCommand) chan *RedisExecuteResult {
 	ch := make(chan *RedisExecuteResult)
+	if ToLower(command.Args[0]) == "info" {
+		command.Option.FormatType = FormatRawString
+	}
 	go func() {
-		args := ToInterface(StringArray(command.Args))
 		count := 1
 		if command.Option != nil && command.Option.Repeat > 1 {
 			count = int(command.Option.Repeat)
@@ -100,36 +102,11 @@ func (executor *RedisExecutor) Execute(command *RedisCommand) chan *RedisExecute
 			delay = time.Duration(int64(time.Millisecond) * i)
 		}
 		for ; count > 0; count-- {
-			cmd := redis.NewCmd(args...)
-			err := executor.client.Process(cmd)
-			if err != nil && err != redis.Nil {
-				ch <- &RedisExecuteResult{
-					Value: nil,
-					Error: err,
-					Host:  executor.Option,
-					Cmd:   command,
-				}
+			fn, ok := cMap[ToLower(command.Args[0])]
+			if ok {
+				fn(executor, ch, command)
 			} else {
-				result := cmd.Val()
-				if result != nil {
-					switch strings.ToLower(command.Args[0]) {
-					case "hgetall":
-						list := reflect.ValueOf(result)
-						_len := list.Len()
-						m := make(map[string]interface{})
-						for i := 0; i < _len; i += 2 {
-							m[list.Index(i).Interface().(string)] = list.Index(i + 1).Interface()
-						}
-						result = m
-					}
-				}
-				//WriteLn(result, err)
-				ch <- &RedisExecuteResult{
-					Error: nil,
-					Value: &result,
-					Host:  executor.Option,
-					Cmd:   command,
-				}
+				executor.coreExecute(ch, command)
 			}
 			if count > 1 && delay > 0 {
 				time.Sleep(delay)
@@ -140,7 +117,94 @@ func (executor *RedisExecutor) Execute(command *RedisCommand) chan *RedisExecute
 	return ch
 }
 
-func (executor *RedisExecutor) AsyncExecute(cmd *RedisCommand) chan *RedisExecuteResult {
+var cMap = map[string]func(*RedisExecutor, chan *RedisExecuteResult, *RedisCommand){
+	"getmatch": func(executor *RedisExecutor, ch chan *RedisExecuteResult, cmd *RedisCommand) {
+		keys := executor.client.Keys(cmd.Args[1])
+		val := keys.Val()
+		mmm := map[string]interface{}{}
+		for _, value := range val {
+			t := executor.client.Type(value).Val()
+			switch t {
+			case "hash":
+				mmm[value] = executor.client.HGetAll(value).Val()
+			case "list":
+				mmm[value] = executor.client.LRange(value, 0, -1).Val()
+			case "string":
+				mmm[value] = executor.client.Get(value).Val()
+			default:
+				mmm[value] = t
+			}
+		}
+		var k interface{} = mmm
+		ch <- &RedisExecuteResult{
+			Error: nil,
+			Value: &k,
+			Host:  executor.Option,
+			Cmd:   cmd,
+		}
+	},
+	"delall": func(executor *RedisExecutor, ch chan *RedisExecuteResult, cmd *RedisCommand) {
+		keys := executor.client.Keys(cmd.Args[1])
+		val := keys.Val()
+		if executor.Option.Cluster {
+			for _, value := range val {
+				executor.client.Del(value)
+			}
+		} else {
+			for i := 0; i < len(val); i += 100 {
+				o := i + 100
+				if o > len(val) {
+					o = len(val)
+				}
+				executor.client.Del(val[i:o]...)
+			}
+		}
+		var k interface{} = val
+		ch <- &RedisExecuteResult{
+			Error: nil,
+			Value: &k,
+			Host:  executor.Option,
+			Cmd:   cmd,
+		}
+	},
+}
+
+func (executor *RedisExecutor) coreExecute(ch chan *RedisExecuteResult, command *RedisCommand) {
+	args := ToInterface(StringArray(command.Args))
+	cmd := redis.NewCmd(args...)
+	err := executor.client.Process(cmd)
+	if err != nil && err != redis.Nil {
+		ch <- &RedisExecuteResult{
+			Value: nil,
+			Error: err,
+			Host:  executor.Option,
+			Cmd:   command,
+		}
+	} else {
+		result := cmd.Val()
+		if result != nil {
+			switch ToLower(command.Args[0]) {
+			case "hgetall":
+				list := reflect.ValueOf(result)
+				_len := list.Len()
+				m := make(map[string]interface{})
+				for i := 0; i < _len; i += 2 {
+					m[list.Index(i).Interface().(string)] = list.Index(i + 1).Interface()
+				}
+				result = m
+			}
+		}
+		//WriteLn(result, err)
+		ch <- &RedisExecuteResult{
+			Error: nil,
+			Value: &result,
+			Host:  executor.Option,
+			Cmd:   command,
+		}
+	}
+}
+
+func (executor *RedisExecutor) AsyncExecute(cmd *RedisCommand, handleCancel func() bool) chan *RedisExecuteResult {
 	ch1 := make(chan *RedisExecuteResult)
 	go func() {
 		ch := executor.Execute(cmd)
@@ -157,12 +221,15 @@ func (executor *RedisExecutor) AsyncExecute(cmd *RedisCommand) chan *RedisExecut
 				ch1 <- resp
 				<-ch1
 				time.Sleep(time.Millisecond * 50)
-				break
 			default:
+				if handleCancel != nil && handleCancel() {
+					running = false
+					ch1 <- nil
+					return
+				}
 				time.Sleep(time.Millisecond * 50)
 				u := "/|-\\|"[counter%5]
 				Write("\033[2K\033[0G" + string(u))
-				break
 			}
 		}
 	}()
