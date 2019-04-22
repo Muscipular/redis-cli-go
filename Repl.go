@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"reflect"
 	"syscall"
+	"time"
 	"unsafe"
 	//. "strings"
 	//"time"
@@ -76,6 +77,7 @@ func (repl *REPL) execute(input string) {
 	for true {
 		resp := <-ch
 		if resp == nil {
+			time.Sleep(time.Millisecond * 50)
 			break
 		}
 		if resp.Error != nil {

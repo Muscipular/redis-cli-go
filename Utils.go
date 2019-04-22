@@ -179,7 +179,7 @@ func GetCmdOpt(args []string) (*RedisCommandOption, []string) {
 	return &commandOption, argsx
 }
 
-var _DEBUG_ = true
+var _DEBUG_ = false
 
 func Debug(tag string, a ...interface{}) {
 	if _DEBUG_ {
@@ -191,22 +191,22 @@ func Debug(tag string, a ...interface{}) {
 func (result *RedisExecuteResult) Format(f EnumFormatType, nc bool) {
 	switch f {
 	case FormatJson:
-		result.FormatNormal(f)
+		result.formatNormal(f, nc)
 	case FormatNormal:
-		result.FormatNormal(f)
+		result.formatNormal(f, nc)
 	case FormatRawString:
-		result.FormatNormal(f)
+		result.formatNormal(f, nc)
 	}
 }
 
-func (result *RedisExecuteResult) FormatNormal(ft EnumFormatType) {
+func (result *RedisExecuteResult) formatNormal(ft EnumFormatType, nc bool) {
 	//Debug("format", *result.Value)
 	if result.Value == nil || *result.Value == nil {
 		WriteLn(If(ft == FormatJson, "null", "(nil)"))
 		return
 	}
 	value := reflect.ValueOf(*result.Value)
-	formatNormal(value, "", 0, 0, ft)
+	formatNormal(value, "", 0, 0, ft, nc)
 }
 
 func makePrefix(prefix string, ix int, count int) string {
@@ -230,7 +230,14 @@ func makePrefix(prefix string, ix int, count int) string {
 	return strings.Repeat(" ", sCount-sIx+len(prefix)) + strconv.Itoa(ix) + ") "
 }
 
-func formatNormal(value reflect.Value, prefix string, ix int, count int, ft EnumFormatType) {
+func Color(s string, code string, nc bool) string {
+	if nc {
+		return s
+	}
+	return "\033[" + code + "m" + s + "\033[0m"
+}
+
+func formatNormal(value reflect.Value, prefix string, ix int, count int, ft EnumFormatType, nc bool) {
 	kind := value.Kind()
 	//Debug("BG", dep, kind, value.Interface())
 	switch kind {
@@ -252,16 +259,17 @@ func formatNormal(value reflect.Value, prefix string, ix int, count int, ft Enum
 		}
 		for i := 0; i < _len; i++ {
 			v2 := value.Index(i)
-			formatNormal(v2, px, i, _len, ft)
+			formatNormal(v2, px, i, _len, ft, nc)
 		}
 	case reflect.Map:
 		iter := Keys(value.MapKeys())
 		sort.Sort(iter)
 		for _, v := range iter {
-			WriteLn(makePrefix(prefix, ix, count) + v.Interface().(string) + " : " + valueToString(ft, value.MapIndex(v)))
+			s := v.Interface().(string)
+			WriteLn(makePrefix(prefix, ix, count) + "\"" + Color(s, "32", nc) + "\"" + Color(" => ", "93", nc) + valueToString(ft, value.MapIndex(v)))
 		}
 	case reflect.Interface:
-		formatNormal(value.Elem(), prefix, ix, count, ft)
+		formatNormal(value.Elem(), prefix, ix, count, ft, nc)
 	case reflect.Invalid:
 		WriteLn(makePrefix(prefix, ix, count), "(nil)")
 	default:
