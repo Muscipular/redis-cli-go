@@ -2,17 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"github.com/Azure/go-ansiterm"
-	"github.com/Azure/go-ansiterm/winterm"
 	"github.com/jessevdk/go-flags"
-	"os"
 	"reflect"
-	"runtime"
 	"sort"
 	"strconv"
-	"syscall"
 	"time"
 	//"runtime/debug"
 
@@ -54,38 +48,6 @@ func ToInterface(s Collection) []interface{} {
 }
 
 //var colorableOut = colorable.NewColorableStdout()
-
-var f *ansiterm.AnsiParser = nil
-var isWindows = runtime.GOOS == "windows"
-var isInitial = false
-
-func getAnsiParser() (*ansiterm.AnsiParser, error) {
-	if !isInitial {
-		isInitial = true
-		handler := winterm.CreateWinEventHandler(os.Stdout.Fd(), os.Stdout)
-		if handler == nil {
-			lasterr := syscall.GetLastError()
-			if lasterr == nil {
-				lasterr = errors.New("terminal initial error")
-			}
-			return nil, lasterr
-		}
-		f = ansiterm.CreateParser("Ground", handler)
-	}
-	return f, nil
-}
-func write(s string) {
-	if isWindows {
-		parser, e := getAnsiParser()
-		if e != nil {
-			fmt.Println(e)
-			os.Exit(-1)
-		}
-		_, _ = parser.Parse([]byte(s))
-	} else {
-		fmt.Print(s)
-	}
-}
 
 func Write(a ...interface{}) {
 	write(fmt.Sprint(a...))
@@ -182,12 +144,12 @@ func GetHostOpt(args []string) (error, *RedisHostOption, []string) {
 func GetCmdOpt(args []string) (*RedisCommandOption, []string) {
 	commandOption := RedisCommandOption{}
 	option := struct {
-		FormatType             func(string)  `short:"f" long:"format" alias:"as" description:"format type: support: json, normal, raw"`
-		Repeat                 func(uint)    `short:"r" long:"repeat" description:"repeat time"`
-		Delay                  func(float32) `short:"d" long:"delay" description:"delay in sec. (float)"`
-		RunAtEachNode          bool          `short:"e" long:"each-node" description:"run at each node"`
-		SplitResultForEachNode bool          `short:"s" long:"split-node" description:"split result for each node"`
-		NoColor                bool          `long:"no-color" description:"no color output"`
+		FormatType func(string)  `short:"f" long:"format" alias:"as" description:"format type: support: json, normal, raw"`
+		Repeat     func(uint)    `short:"r" long:"repeat" description:"repeat time"`
+		Delay      func(float32) `short:"d" long:"delay" description:"delay in sec. (float)"`
+		//RunAtEachNode          bool          `short:"e" long:"each-node" description:"run at each node"`
+		//SplitResultForEachNode bool          `short:"s" long:"split-node" description:"split result for each node"`
+		NoColor bool `long:"no-color" description:"no color output"`
 	}{
 		FormatType: func(s string) {
 			switch strings.ToLower(s) {
@@ -209,8 +171,8 @@ func GetCmdOpt(args []string) (*RedisCommandOption, []string) {
 	parser := flags.NewParser(&option, flags.PassDoubleDash|flags.IgnoreUnknown)
 	parser.Name = "command [args[]]"
 	argsx, _ := parser.ParseArgs(args)
-	commandOption.RunAtEachNode = option.RunAtEachNode
-	commandOption.SplitResultForEachNode = option.SplitResultForEachNode
+	//commandOption.RunAtEachNode = option.RunAtEachNode
+	//commandOption.SplitResultForEachNode = option.SplitResultForEachNode
 	//WriteLn(commandOption)
 	//WriteLn(argsx)
 	//parser.WriteHelp(os.Stdout)
@@ -328,8 +290,12 @@ func (a Keys) Swap(i, j int) {
 }
 
 func valueToString(formatType EnumFormatType, value reflect.Value) string {
-	//Debug("vts", formatType, value)
-	if value.Kind() == reflect.String {
+	var ifv interface{}
+	if value.Kind() == reflect.Interface {
+		ifv = value.Interface()
+	}
+	Debug("vts", formatType, value.Kind(), value.Type(), reflect.ValueOf(ifv).Kind(), value)
+	if value.Kind() == reflect.String || reflect.ValueOf(ifv).Kind() == reflect.String {
 		if formatType == FormatRawString {
 			return value.Interface().(string)
 		}

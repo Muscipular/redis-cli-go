@@ -41,16 +41,6 @@ func NewREPL(redis *RedisExecutor) *REPL {
 			i.history.Clear()
 			return nil
 		},
-		func(p *prompt.Prompt) error {
-			//field := reflect.ValueOf(*p).Field(0)
-			//WriteLn(field)
-			//pointer := field.InterfaceData()
-			//WriteLn(pointer)
-			//WriteLn(field.UnsafeAddr())
-			//ptr1 := pointer[0]
-			//i.in = *(*prompt.ConsoleParser)(unsafe.Pointer(ptr1))
-			return nil
-		},
 	)
 	return i
 }
@@ -72,8 +62,8 @@ func (repl *REPL) execute(input string) {
 	signal.Notify(sch,
 		syscall.SIGINT,
 		syscall.SIGTERM,
-		syscall.SIGQUIT,)
-	ch := executor.AsyncExecute(cmd, func() bool {
+		syscall.SIGQUIT)
+	ch := executor.asyncExecute(cmd, func() bool {
 		select {
 		case <-sch:
 			signal.Stop(sch)
@@ -81,11 +71,6 @@ func (repl *REPL) execute(input string) {
 			return true
 		default:
 		}
-		//if e == nil {
-		//	if prompt.GetKey(bytes) == prompt.ControlC {
-		//		return true
-		//	}
-		//}
 		return false
 	})
 	for true {

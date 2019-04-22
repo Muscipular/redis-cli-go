@@ -27,7 +27,7 @@ func main() {
 			Args:   cmds,
 			Option: option,
 		}
-		ch := _redis.AsyncExecute(command, nil)
+		ch := _redis.asyncExecute(command, nil)
 
 		for true {
 			resp := <-ch

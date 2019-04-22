@@ -2,9 +2,11 @@ package main
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"github.com/go-redis/redis"
 	"reflect"
+	"strconv"
 	. "strings"
 	"time"
 )
@@ -17,7 +19,7 @@ type RedisHostOption struct {
 	Database int    `short:"n" long:"database" description:"default db"`
 	Ssl      bool   `long:"ssl" description:"enable ssl"`
 	SslHost  string `long:"ssl-host" description:"ssl host"`
-	Cluster  bool   `short:"c" long:"cluster" description:"enable cluster mode"`
+	//Cluster  bool   `short:"c" long:"cluster" description:"enable cluster mode(not finish yet.)"`
 }
 
 type RedisExecutor struct {
@@ -50,11 +52,11 @@ type RedisCommand struct {
 }
 
 type RedisCommandOption struct {
-	FormatType             EnumFormatType
-	Repeat                 uint
-	Delay                  float32
-	RunAtEachNode          bool
-	SplitResultForEachNode bool
+	FormatType EnumFormatType
+	Repeat     uint
+	Delay      float32
+	//RunAtEachNode          bool
+	//SplitResultForEachNode bool
 }
 
 func NewRedisExecutor(opt *RedisHostOption) *RedisExecutor {
@@ -104,9 +106,21 @@ func (executor *RedisExecutor) Execute(command *RedisCommand) chan *RedisExecute
 		for ; count > 0; count-- {
 			fn, ok := cMap[ToLower(command.Args[0])]
 			if ok {
-				fn(executor, ch, command)
+				result, err := fn(executor, command)
+				ch <- &RedisExecuteResult{
+					Error: err,
+					Value: result,
+					Cmd:   command,
+					Host:  executor.Option,
+				}
 			} else {
-				executor.coreExecute(ch, command)
+				result, err := executor.coreExecute(command)
+				ch <- &RedisExecuteResult{
+					Error: err,
+					Value: result,
+					Cmd:   command,
+					Host:  executor.Option,
+				}
 			}
 			if count > 1 && delay > 0 {
 				time.Sleep(delay)
@@ -117,69 +131,126 @@ func (executor *RedisExecutor) Execute(command *RedisCommand) chan *RedisExecute
 	return ch
 }
 
-var cMap = map[string]func(*RedisExecutor, chan *RedisExecuteResult, *RedisCommand){
-	"getmatch": func(executor *RedisExecutor, ch chan *RedisExecuteResult, cmd *RedisCommand) {
-		keys := executor.client.Keys(cmd.Args[1])
-		val := keys.Val()
-		mmm := map[string]interface{}{}
-		for _, value := range val {
-			t := executor.client.Type(value).Val()
-			switch t {
-			case "hash":
-				mmm[value] = executor.client.HGetAll(value).Val()
-			case "list":
-				mmm[value] = executor.client.LRange(value, 0, -1).Val()
-			case "string":
-				mmm[value] = executor.client.Get(value).Val()
-			default:
-				mmm[value] = t
+func _ScanAll(executor *RedisExecutor, cmd *RedisCommand) (*interface{}, error) {
+	if len(cmd.Args) < 2 {
+		return nil, errors.New("ScanAll argument incorrect")
+	}
+	count := int64(-1)
+	for ix := 0; ix < len(cmd.Args); ix++ {
+		value := cmd.Args[ix]
+		if ToUpper(value) == "COUNT" && ix+1 < len(cmd.Args) {
+			i, e := strconv.Atoi(cmd.Args[ix+1])
+			if e != nil {
+				return nil, e
 			}
+			count = int64(i)
+			//args = append(args[:ix-1], args[ix+2:]...)
+			break
 		}
-		var k interface{} = mmm
-		ch <- &RedisExecuteResult{
-			Error: nil,
-			Value: &k,
-			Host:  executor.Option,
-			Cmd:   cmd,
+	}
+	keyword := cmd.Args[1]
+	for ix := 0; ix < len(cmd.Args); ix++ {
+		value := cmd.Args[ix]
+		if ToUpper(value) == "MATCH" && ix+1 < len(cmd.Args) {
+			keyword = cmd.Args[ix+1]
+			break
 		}
-	},
-	"delall": func(executor *RedisExecutor, ch chan *RedisExecuteResult, cmd *RedisCommand) {
-		keys := executor.client.Keys(cmd.Args[1])
-		val := keys.Val()
-		if executor.Option.Cluster {
-			for _, value := range val {
-				executor.client.Del(value)
-			}
-		} else {
-			for i := 0; i < len(val); i += 100 {
-				o := i + 100
-				if o > len(val) {
-					o = len(val)
-				}
-				executor.client.Del(val[i:o]...)
-			}
+	}
+	if count <= 0 {
+		i, e := executor.client.DBSize().Result()
+		if e != nil {
+			i = 5000
 		}
-		var k interface{} = val
-		ch <- &RedisExecuteResult{
-			Error: nil,
-			Value: &k,
-			Host:  executor.Option,
-			Cmd:   cmd,
+		if i == 0 {
+			r := interface{}([]string{})
+			return &r, nil
 		}
-	},
+		size := i / 10
+		if size < 1000 {
+			size = 1000
+		} else if size > 10000 {
+			size = 10000
+		}
+		count = size
+	}
+	var results []string
+	for cursor := uint64(0); true; {
+		keys, c, err := executor.client.Scan(cursor, keyword, count).Result()
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, keys...)
+		if c == 0 {
+			break
+		}
+		cursor = c
+	}
+	var k interface{} = results
+	return &k, nil
 }
 
-func (executor *RedisExecutor) coreExecute(ch chan *RedisExecuteResult, command *RedisCommand) {
+func _GetMatch(executor *RedisExecutor, cmd *RedisCommand) (*interface{}, error) {
+	keys, e := _ScanAll(executor, &RedisCommand{
+		Args:   []string{"SCANALL", cmd.Args[1]},
+		Option: cmd.Option,
+	})
+	if e != nil {
+		return nil, e
+	}
+	val := (*keys).([]string)
+	mmm := map[string]interface{}{}
+	for _, value := range val {
+		t := executor.client.Type(value).Val()
+		switch t {
+		case "hash":
+			mmm[value] = executor.client.HGetAll(value).Val()
+		case "list":
+			mmm[value] = executor.client.LRange(value, 0, -1).Val()
+		case "string":
+			mmm[value] = executor.client.Get(value).Val()
+		default:
+			mmm[value] = t
+		}
+	}
+	var k interface{} = mmm
+	return &k, nil
+}
+
+func _DelAll(executor *RedisExecutor, cmd *RedisCommand) (*interface{}, error) {
+	keys := executor.client.Keys(cmd.Args[1])
+	if keys.Err() != nil {
+		return nil, keys.Err()
+	}
+	val := keys.Val()
+	//if executor.Option.Cluster {
+	//	for _, value := range val {
+	//		executor.client.Del(value)
+	//	}
+	//} else {
+	for i := 0; i < len(val); i += 100 {
+		o := i + 100
+		if o > len(val) {
+			o = len(val)
+		}
+		executor.client.Del(val[i:o]...)
+	}
+	//}
+	var k interface{} = val
+	return &k, nil
+}
+
+var cMap = map[string]func(*RedisExecutor, *RedisCommand) (*interface{}, error){
+	"scanall":  _ScanAll,
+	"getmatch": _GetMatch,
+	"delall":   _DelAll,
+}
+
+func (executor *RedisExecutor) coreExecute(command *RedisCommand) (result *interface{}, err error) {
 	args := ToInterface(StringArray(command.Args))
 	cmd := redis.NewCmd(args...)
-	err := executor.client.Process(cmd)
+	err = executor.client.Process(cmd)
 	if err != nil && err != redis.Nil {
-		ch <- &RedisExecuteResult{
-			Value: nil,
-			Error: err,
-			Host:  executor.Option,
-			Cmd:   command,
-		}
+		return nil, err
 	} else {
 		result := cmd.Val()
 		if result != nil {
@@ -194,17 +265,11 @@ func (executor *RedisExecutor) coreExecute(ch chan *RedisExecuteResult, command 
 				result = m
 			}
 		}
-		//WriteLn(result, err)
-		ch <- &RedisExecuteResult{
-			Error: nil,
-			Value: &result,
-			Host:  executor.Option,
-			Cmd:   command,
-		}
+		return &result, nil
 	}
 }
 
-func (executor *RedisExecutor) AsyncExecute(cmd *RedisCommand, handleCancel func() bool) chan *RedisExecuteResult {
+func (executor *RedisExecutor) asyncExecute(cmd *RedisCommand, handleCancel func() bool) chan *RedisExecuteResult {
 	ch1 := make(chan *RedisExecuteResult)
 	go func() {
 		ch := executor.Execute(cmd)
