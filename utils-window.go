@@ -8,26 +8,25 @@ import (
 	"github.com/Azure/go-ansiterm"
 	"github.com/Azure/go-ansiterm/winterm"
 	"os"
-	"runtime"
 	"syscall"
 )
 
-var f *ansiterm.AnsiParser = nil
-var isWindows = runtime.GOOS == "windows"
+var ansiParser *ansiterm.AnsiParser = nil
 var isInitial = false
 
 func write(s string) {
-	if isWindows {
-		parser, e := getAnsiParser()
-		if e != nil {
-			fmt.Println(e)
-			os.Exit(-1)
-		}
+	parser, e := getAnsiParser()
+	if e != nil {
+		fmt.Println(e)
+		os.Exit(-1)
+	}
+	if parser != nil {
 		_, _ = parser.Parse([]byte(s))
 	} else {
 		fmt.Print(s)
 	}
 }
+
 func getAnsiParser() (*ansiterm.AnsiParser, error) {
 	if !isInitial {
 		isInitial = true
@@ -39,7 +38,7 @@ func getAnsiParser() (*ansiterm.AnsiParser, error) {
 			}
 			return nil, lasterr
 		}
-		f = ansiterm.CreateParser("Ground", handler)
+		ansiParser = ansiterm.CreateParser("Ground", handler)
 	}
-	return f, nil
+	return ansiParser, nil
 }

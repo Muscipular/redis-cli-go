@@ -10,7 +10,7 @@ var _redis *RedisExecutor = nil
 func main() {
 	//fmt.Println("Please select table.")
 	//repl()
-	WriteLn("redis cli")
+	//WriteLn("redis cli")
 	args := os.Args[1:]
 	Debug("main", args)
 	e, opt, cmds := GetHostOpt(args)
