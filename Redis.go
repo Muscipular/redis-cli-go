@@ -1,6 +1,7 @@
 package main
 
 import (
+	. "./term"
 	"crypto/tls"
 	"errors"
 	"fmt"

@@ -1,6 +1,6 @@
 // +build windows
 
-package main
+package term
 
 import (
 	"errors"
@@ -32,11 +32,11 @@ func getAnsiParser() (*ansiterm.AnsiParser, error) {
 		isInitial = true
 		handler := winterm.CreateWinEventHandler(os.Stdout.Fd(), os.Stdout)
 		if handler == nil {
-			lasterr := syscall.GetLastError()
-			if lasterr == nil {
-				lasterr = errors.New("terminal initial error")
+			lastErr := syscall.GetLastError()
+			if lastErr == nil {
+				lastErr = errors.New("terminal initial error")
 			}
-			return nil, lasterr
+			return nil, lastErr
 		}
 		ansiParser = ansiterm.CreateParser("Ground", handler)
 	}

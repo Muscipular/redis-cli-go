@@ -1,7 +1,7 @@
 package main
 
 import (
-	//"fmt"
+	. "./term"
 	"github.com/c-bata/go-prompt"
 	"os"
 	"os/signal"
@@ -42,6 +42,15 @@ func NewREPL(redis *RedisExecutor) *REPL {
 			i.history.Clear()
 			return nil
 		},
+		prompt.OptionSuggestionBGColor(prompt.LightGray),
+		prompt.OptionPreviewSuggestionTextColor(prompt.LightGray),
+		prompt.OptionDescriptionBGColor(prompt.LightGray),
+		prompt.OptionDescriptionTextColor(prompt.Black),
+		prompt.OptionPreviewSuggestionTextColor(prompt.Black),
+		prompt.OptionSelectedSuggestionBGColor(prompt.DarkGray),
+		prompt.OptionSelectedSuggestionTextColor(prompt.Black),
+		prompt.OptionSelectedDescriptionBGColor(prompt.DarkGray),
+		prompt.OptionSelectedDescriptionTextColor(prompt.Black),
 	)
 	return i
 }
@@ -91,6 +100,24 @@ func (repl *REPL) execute(input string) {
 }
 
 func (repl *REPL) suggest(document prompt.Document) []prompt.Suggest {
+	Debug("Suggest", document.Text, document.GetWordBeforeCursor(), document.FindStartOfPreviousWord())
+
+	if document.GetWordBeforeCursor() == "-" {
+		return []prompt.Suggest{
+			{
+				Text:        "-f ",
+				Description: "format",
+			},
+			{
+				Text:        "-r ",
+				Description: "repeat",
+			},
+			{
+				Text:        "-d ",
+				Description: "delay",
+			},
+		}
+	}
 	return []prompt.Suggest{}
 }
 

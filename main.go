@@ -1,6 +1,7 @@
 package main
 
 import (
+	. "./term"
 	"fmt"
 	"os"
 )
