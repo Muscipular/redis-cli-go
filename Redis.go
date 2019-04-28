@@ -1,7 +1,7 @@
 package main
 
 import (
-	. "./term"
+	//. "./term"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -268,36 +268,4 @@ func (executor *RedisExecutor) coreExecute(command *RedisCommand) (result *inter
 		}
 		return &result, nil
 	}
-}
-
-func (executor *RedisExecutor) asyncExecute(cmd *RedisCommand, handleCancel func() bool) chan *RedisExecuteResult {
-	ch1 := make(chan *RedisExecuteResult)
-	go func() {
-		ch := executor.Execute(cmd)
-		running := true
-		for counter := 0; running; counter++ {
-			select {
-			case resp := <-ch:
-				Write("\033[2K\033[0G")
-				if resp == nil {
-					running = false
-					ch1 <- nil
-					return
-				}
-				ch1 <- resp
-				<-ch1
-				time.Sleep(time.Millisecond * 50)
-			default:
-				if handleCancel != nil && handleCancel() {
-					running = false
-					ch1 <- nil
-					return
-				}
-				time.Sleep(time.Millisecond * 50)
-				u := "/|-\\|"[counter%5]
-				Write("\033[2K\033[0G" + string(u))
-			}
-		}
-	}()
-	return ch1
 }

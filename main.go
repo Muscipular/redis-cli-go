@@ -3,6 +3,9 @@ package main
 import (
 	. "./term"
 	"fmt"
+	"github.com/eiannone/keyboard"
+
+	//"github.com/gdamore/tcell"
 	"os"
 )
 
@@ -12,6 +15,22 @@ func main() {
 	//fmt.Println("Please select table.")
 	//repl()
 	//WriteLn("redis cli")
+	eee := keyboard.Open()
+	if eee != nil {
+		fmt.Println(eee)
+	}
+	defer keyboard.Close()
+	for {
+		ch, key, eee := keyboard.GetKey()
+		switch key {
+		case keyboard.KeyCtrlC:
+			fmt.Println(ch, key, eee, "End")
+			os.Exit(0)
+		}
+		fmt.Println(ch, key, eee)
+	}
+	return
+
 	args := os.Args[1:]
 	Debug("main", args)
 	e, opt, cmds := GetHostOpt(args)

@@ -2,8 +2,6 @@
 
 package term
 
-import "fmt"
-
-func write(s string) {
-	fmt.Print(s)
+func (tm *Term) _platformInit() error {
+	return nil
 }

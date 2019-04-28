@@ -308,3 +308,11 @@ func valueToString(formatType EnumFormatType, value reflect.Value) string {
 	//}
 	//return fmt.Sprint(value)
 }
+
+func WriteLn(...interface{}) {
+
+}
+
+func Write(...interface{}) {
+
+}
